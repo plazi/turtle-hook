@@ -9,7 +9,7 @@ Turtle-Hook is a service that updates a SPARQL endpoint to reflect changes to RD
 - **Runtime**: [Deno](https://deno.land/) (TypeScript runtime)
 - **Language**: TypeScript
 - **HTTP Framework**: ghact (GitHub Action/Webhook framework for Deno)
-- **Triple Store**: Blazegraph (SPARQL endpoint)
+- **Triple Store**: Any SPARQL 1.1 compliant endpoint
 - **Container**: Docker
 
 ## Project Structure
