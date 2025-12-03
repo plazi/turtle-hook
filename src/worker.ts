@@ -1,5 +1,5 @@
 import { GHActWorker, type Job } from "./deps.ts";
-import { ghActConfig, sparqlConfig } from "../config/config.ts";
+import { sparqlConfig } from "../config/config.ts";
 
 const fileUri = (fileName: string) =>
   `<http://${Deno.env.get("HOSTNAME")}:4505/workdir/repository/${fileName}>`;
@@ -21,7 +21,6 @@ const UPDATE = (fileName: string) => `${DROP(fileName)}; ${LOAD(fileName)}`;
 
 const _worker = new GHActWorker(
   self,
-  ghActConfig,
   async (job: Job, log): Promise<string> => {
     log(
       "Starting transformation\n" + JSON.stringify(job, undefined, 2),
@@ -36,7 +35,7 @@ const _worker = new GHActWorker(
       if ("added" in job.files) added = job.files.added;
       if ("removed" in job.files) removed = job.files.removed;
     } else if (job.from) {
-      const files = await _worker.gitRepository.getModifiedAfter(
+      const files = await _worker.gitRepository!.getModifiedAfter(
         job.from,
         job.till,
         log,
