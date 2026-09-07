@@ -1,23 +1,13 @@
 import { GHActWorker, type Job } from "./deps.ts";
 import { sparqlConfig } from "../config/config.ts";
+import { type Action, statementsFor } from "./sparql.ts";
+import { postUpdate } from "./endpoint.ts";
 
 const fileUri = (fileName: string) =>
   `<http://${Deno.env.get("HOSTNAME")}:4505/workdir/repository/${fileName}>`;
 
-const graphUri = (fileName: string) =>
-  `<${sparqlConfig.graphUriPrefix}/${
-    fileName.replace(/.*\//, "").replace(/\.ttl$/, "")
-  }>`;
-
-const DROP = (fileName: string) => `DROP GRAPH ${graphUri(fileName)}`;
-
-/* SPARQL A LA (note the .ttl and domains) `
-LOAD <https://plazi.github.io/treatments-rdf/data/A8/2F/87/A82F87957F0CFFFFFF3E5EE3FB54FE91.ttl> INTO GRAPH <https://raw.githubusercontent.com/plazi/treatments-rdf/main/data/A8/2F/87/A82F87957F0CFFFFFF3E5EE3FB54FE91>
-` */
-const LOAD = (fileName: string) =>
-  `LOAD ${fileUri(fileName)} INTO GRAPH ${graphUri(fileName)}`;
-
-const UPDATE = (fileName: string) => `${DROP(fileName)}; ${LOAD(fileName)}`;
+const readFile = (fileName: string) =>
+  Deno.readTextFileSync(`${_worker.gitRepository!.directory}/${fileName}`);
 
 const _worker = new GHActWorker(
   self,
@@ -55,37 +45,36 @@ const _worker = new GHActWorker(
     removed = removed.filter((f) => f.endsWith(".ttl"));
     modified = modified.filter((f) => f.endsWith(".ttl"));
 
-    log(`> got added    ${added}`); // -> LOAD
-    log(`> got removed  ${removed}`); // -> DROP graphname
-    log(`> got modified ${modified}`); // DROP; LOAD
+    log(`> got added    ${added}`);
+    log(`> got removed  ${removed}`);
+    log(`> got modified ${modified}`);
+    log(`- target is ${sparqlConfig.mode} on ${sparqlConfig.uploadUri}`);
 
-    const statements = [
-      ...added.map((f) => ({ statement: LOAD(f), fileName: f })),
-      ...removed.map((f) => ({ statement: DROP(f), fileName: f })),
-      ...modified.map((f) => ({ statement: UPDATE(f), fileName: f })),
+    const changes: { fileName: string; action: Action }[] = [
+      ...added.map((f) => ({ fileName: f, action: "added" as const })),
+      ...removed.map((f) => ({ fileName: f, action: "removed" as const })),
+      ...modified.map((f) => ({ fileName: f, action: "modified" as const })),
     ];
 
-    log(`- statement count: ${statements.length}`);
+    log(`- file count: ${changes.length}`);
 
     const failingFiles: string[] = [];
     let succeededOnce = false;
 
-    for (const { statement, fileName } of statements) {
-      log(`» handling ${fileName}\n  ${statement}`);
+    for (const { fileName, action } of changes) {
       try {
-        const response = await fetch(sparqlConfig.uploadUri, {
-          method: "POST",
-          body: statement,
-          headers: { "Content-Type": "application/sparql-update" },
+        // built per file rather than up front so that a file we cannot even
+        // turn into an update is reported like any other failing file
+        const statements = statementsFor(sparqlConfig, fileName, action, {
+          fileUri,
+          readFile,
         });
-        if (response.ok) {
-          succeededOnce = true;
-          log("» success");
-        } else {
-          throw new Error(
-            `Got ${response.status}:\n` + await response.text(),
-          );
+        for (const statement of statements) {
+          log(`» handling ${fileName}\n  ${statement}`);
+          await postUpdate(sparqlConfig.uploadUri, statement);
         }
+        succeededOnce = true;
+        log("» success");
       } catch (error) {
         failingFiles.push(fileName);
         log(" » error:");
@@ -94,12 +83,12 @@ const _worker = new GHActWorker(
     }
 
     log("< done");
-    if (!succeededOnce) {
+    if (changes.length > 0 && !succeededOnce) {
       log(`All failed:\n ${failingFiles.join("\n ")}`);
       throw new Error(`All failed`);
     } else if (failingFiles.length > 0) {
       log(`Some failed:\n ${failingFiles.join("\n ")}`);
-      return `Some failed: ${failingFiles.length} of ${statements.length} failed`;
+      return `Some failed: ${failingFiles.length} of ${changes.length} failed`;
     } else {
       log("All succeeded");
       return "";

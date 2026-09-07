@@ -21,6 +21,6 @@ RUN deno cache src/deps.ts
 ADD src src
 ADD config config
 # Compile the main app so that it doesn't need to be compiled each startup/entry.
-RUN deno cache src/main.ts
+RUN deno cache src/main.ts src/sweep.ts
 
 CMD ["run", "--allow-net", "--allow-read", "--allow-write", "--allow-run=git", "--allow-env", "src/main.ts"]
