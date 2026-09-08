@@ -20,6 +20,11 @@ same image can serve a private triple store and a shared one:
 | `SPARQL_USER`       | credentials for the update endpoint, if it needs any         |
 | `SPARQL_PASSWORD`   | set both or neither                                          |
 
+`SPARQL_TAXOMPLETE_INDEX=true` additionally derives the prefix triples
+[taxomplete](https://github.com/plazi/taxomplete) searches on — see below. It
+works in either mode, because how the data is partitioned and what derived data
+a consumer needs are separate questions.
+
 Anything wrong or missing makes the container fail at startup rather than on the
 first webhook. The uri namespaces in `config/config.ts` are not deployment
 settings: they have to match what gg2rdf writes.
@@ -34,6 +39,7 @@ services:
       - SPARQL_MODE=single-graph
       - SPARQL_ENDPOINT=https://example.org/sparql
       - SPARQL_GRAPH=https://plazi.org/treatments
+      - SPARQL_TAXOMPLETE_INDEX=true
       - SPARQL_USER=plazi
       - SPARQL_PASSWORD=${SPARQL_PASSWORD}
       - GHTOKEN=${GHTOKEN}
@@ -92,6 +98,36 @@ Credentials, if the endpoint needs any, come from `SPARQL_USER` and
 
 Note that the target graph is never rebuilt. Bootstrap it once with a bulk
 import, record the commit, and run incrementally from there.
+
+## The taxomplete index
+
+taxomplete offers autocompletion of genus and species names. It does not filter
+on the `tp:` prefix triples, it _matches_ on them: a two character input becomes
+`?sub tp:genusPrefix2 "sa"` with no regex fallback, so a taxon name that lacks
+them is invisible to the search rather than merely slower to find. They have to
+be maintained with the data, not after it, which is what
+`SPARQL_TAXOMPLETE_INDEX=true` does — six `INSERT`s appended to the same request
+that writes the file, covering the lowercased 2, 3 and 4 character prefixes of
+`dwc:genus` and `dwc:species` on every `dwcFP:TaxonName`.
+
+Nothing has to keep them up to date afterwards. Taxon name uris are derived from
+the name itself, so correcting a genus produces a _different_ uri rather than
+mutating an existing one, and a prefix already in the store can never go stale.
+Only new names ever need indexing.
+
+How they are scoped differs by mode, and neither needs a scan of the whole
+graph:
+
+- `graph-per-file` scopes by the graph, which already holds exactly one
+  treatment. `DROP GRAPH` takes the derived triples with it, so they are simply
+  rebuilt after every load.
+- `single-graph` scopes by a `VALUES` list of the subjects the file describes,
+  read from the turtle. The file is read for this even when `SPARQL_INSERT_VIA`
+  is `load`, since only the file lists them.
+
+Derived triples point away from the taxon name, so they never make an orphan
+look referenced, and a name collected by the sweep takes its index entries with
+it.
 
 ## Sweeping leftovers
 

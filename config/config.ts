@@ -10,6 +10,9 @@ import { type SparqlConfig } from "../src/sparql.ts";
  *   SPARQL_ENDPOINT    uri of the update endpoint
  *   SPARQL_GRAPH       the one graph to write to, single-graph mode only
  *   SPARQL_INSERT_VIA  insert-data (default) | load, single-graph mode only
+ *   SPARQL_TAXOMPLETE_INDEX
+ *                      true | false (default), in either mode: derive the
+ *                      prefix triples taxomplete searches on
  *   SPARQL_USER        credentials for the update endpoint, if it needs any
  *   SPARQL_PASSWORD
  *
@@ -40,9 +43,13 @@ const mode = oneOf(
   "graph-per-file",
 );
 
+const taxompleteIndex =
+  oneOf("SPARQL_TAXOMPLETE_INDEX", ["true", "false"], "false") === "true";
+
 export const sparqlConfig: SparqlConfig = mode === "single-graph"
   ? {
     mode,
+    taxompleteIndex,
     uploadUri: required("SPARQL_ENDPOINT"),
     targetGraph: required("SPARQL_GRAPH"),
     insertVia: oneOf(
@@ -57,6 +64,7 @@ export const sparqlConfig: SparqlConfig = mode === "single-graph"
   }
   : {
     mode,
+    taxompleteIndex,
     uploadUri: Deno.env.get("SPARQL_ENDPOINT") ??
       "http://blazegraph:8080/blazegraph/sparql",
     // do not change this prefix, removing the previous version depends on this not changing

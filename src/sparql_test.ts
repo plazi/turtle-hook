@@ -13,6 +13,7 @@ import {
   orphanCountQuery,
   type SingleGraphConfig,
   statementsFor,
+  subjectsIn,
   sweepQuery,
   treatmentId,
   turtleToInsertData,
@@ -22,6 +23,7 @@ const TARGET = "https://example.org/plazi";
 
 const config: SingleGraphConfig = {
   mode: "single-graph",
+  taxompleteIndex: false,
   uploadUri: "https://example.org/sparql",
   targetGraph: TARGET,
   insertVia: "insert-data",
@@ -124,6 +126,7 @@ Deno.test("treatmentId strips the path and extension", () => {
 Deno.test("graph-per-file emits the statements it always has", () => {
   const graphPerFile = {
     mode: "graph-per-file",
+    taxompleteIndex: false,
     uploadUri: "http://blazegraph:8080/blazegraph/sparql",
     graphUriPrefix: "https://treatment.plazi.org/id",
   } as const;
@@ -262,4 +265,199 @@ Deno.test("the sweep collects orphans, in layers, and stops at referenced ones",
   // the publication is unreferenced now but lives under doi.org, which the
   // sweep deliberately leaves alone
   assert(has(store, "http://doi.org/10.3897/zookeys.1054.67004"));
+});
+
+const indexing: SingleGraphConfig = { ...config, taxompleteIndex: true };
+
+/** The pattern taxomplete builds for a two character input. */
+function suggest(store: Store, part: string, typed: string) {
+  return (store.query(`SELECT DISTINCT ?value WHERE {
+    GRAPH <${TARGET}> {
+      ?sub <https://vocab.plazi.org/taxomplete/${part}Prefix${typed.length}> "${typed.toLowerCase()}" ;
+           a <http://filteredpush.org/ontologies/oa/dwcFP#TaxonName> ;
+           <http://rs.tdwg.org/dwc/terms/${part}> ?value .
+    }
+  }`) as Map<string, { value: string }>[]).map((b) => b.get("value")!.value)
+    .sort();
+}
+
+function prefixesOf(store: Store, subject: string) {
+  return (store.query(`SELECT ?p ?o WHERE {
+    GRAPH <${TARGET}> { <${subject}> ?p ?o }
+    FILTER(STRSTARTS(STR(?p), "https://vocab.plazi.org/taxomplete/"))
+  }`) as Map<string, { value: string }>[])
+    .map((b) =>
+      `${
+        b.get("p")!.value.replace("https://vocab.plazi.org/taxomplete/", "")
+      }=${b.get("o")!.value}`
+    )
+    .sort();
+}
+
+Deno.test("subjectsIn finds what a gg2rdf file describes", () => {
+  const found = subjectsIn(treatmentA);
+  assertEquals(found.length, 15);
+  assert(found.includes(`http://treatment.plazi.org/id/${A}`));
+  assert(found.includes("http://taxon-name.plazi.org/id/Animalia/Saigona"));
+});
+
+Deno.test("the index is off unless asked for, in both modes", () => {
+  const sources = {
+    fileUri: () => "<http://irrelevant>",
+    readFile: () => treatmentA,
+  };
+  for (const action of ["added", "modified"] as const) {
+    for (const c of [config, { ...config, insertVia: "load" as const }]) {
+      assert(
+        !statementsFor(c, `data/${A}.ttl`, action, sources)[0].includes(
+          "taxomplete",
+        ),
+        `${c.insertVia} ${action} must not index unless enabled`,
+      );
+    }
+  }
+});
+
+Deno.test("taxomplete triples are derived for the file's taxon names", () => {
+  const store = newStore();
+  for (
+    const statement of statementsFor(indexing, `data/${A}.ttl`, "added", {
+      fileUri: () => "<http://irrelevant>",
+      readFile: () => treatmentA,
+    })
+  ) {
+    store.update(statement);
+  }
+
+  // "Saigona" is 7 characters, so all three lengths apply; "baiseensis" too
+  assertEquals(
+    prefixesOf(
+      store,
+      "http://taxon-name.plazi.org/id/Animalia/Saigona_baiseensis",
+    ),
+    [
+      "genusPrefix2=sa",
+      "genusPrefix3=sai",
+      "genusPrefix4=saig",
+      "speciesPrefix2=ba",
+      "speciesPrefix3=bai",
+      "speciesPrefix4=bais",
+    ],
+  );
+
+  // a taxomplete query for what a user typed now resolves
+  assertEquals(suggest(store, "genus", "Sa"), ["Saigona"]);
+  assertEquals(suggest(store, "species", "bai"), ["baiseensis"]);
+
+  // ranks above genus carry no dwc:genus, so they get nothing
+  assertEquals(
+    prefixesOf(store, "http://taxon-name.plazi.org/id/Animalia/Insecta"),
+    [],
+  );
+});
+
+Deno.test("indexing is scoped to the file and stays idempotent", () => {
+  const store = newStore();
+  const run = (action: "added" | "modified") => {
+    for (
+      const statement of statementsFor(indexing, `data/${A}.ttl`, action, {
+        fileUri: () => "<http://irrelevant>",
+        readFile: () => treatmentA,
+      })
+    ) store.update(statement);
+  };
+  run("added");
+  const size = store.size;
+  run("modified");
+  assertEquals(
+    store.size,
+    size,
+    "replaying must not duplicate derived triples",
+  );
+
+  // scoped by VALUES: a taxon name from another file is left alone
+  store.update(turtleToInsertData(treatmentB, TARGET));
+  run("modified");
+  assertEquals(
+    prefixesOf(
+      store,
+      "http://taxon-name.plazi.org/id/Animalia/Saigona_testensis",
+    ),
+    [],
+    "B's names are not this file's to index",
+  );
+});
+
+Deno.test("graph-per-file rebuilds the index after each load", () => {
+  const graphPerFile = {
+    mode: "graph-per-file",
+    taxompleteIndex: true,
+    uploadUri: "http://irrelevant",
+    graphUriPrefix: "https://treatment.plazi.org/id",
+  } as const;
+  const statements = statementsFor(graphPerFile, `data/${A}.ttl`, "modified", {
+    fileUri: () => "<http://irrelevant>",
+    readFile: () => {
+      throw new Error(
+        "graph-per-file scopes by graph, it must not read the file",
+      );
+    },
+  });
+  assertEquals(statements.length, 1, "one request keeps load and index atomic");
+  // no VALUES: the per-treatment graph is already the scope
+  assert(!statements[0].includes("VALUES"));
+  assertEquals(statements[0].split("taxomplete/").length - 1, 6);
+  // and removal needs no index at all
+  assertEquals(
+    statementsFor(graphPerFile, `data/${A}.ttl`, "removed", {
+      fileUri: () => "<http://irrelevant>",
+      readFile: () => "",
+    }),
+    [`DROP GRAPH <https://treatment.plazi.org/id/${A}>`],
+  );
+});
+
+Deno.test("derived triples neither protect nor survive a swept name", () => {
+  const store = newStore();
+  for (
+    const [file, turtle] of [[`data/${A}.ttl`, treatmentA], [
+      `data/${B}.ttl`,
+      treatmentB,
+    ]] as const
+  ) {
+    for (
+      const statement of statementsFor(indexing, file, "added", {
+        fileUri: () => "<http://irrelevant>",
+        readFile: () => turtle,
+      })
+    ) store.update(statement);
+  }
+  const species = "http://taxon-name.plazi.org/id/Animalia/Saigona_baiseensis";
+  assert(prefixesOf(store, species).length > 0, "indexed to begin with");
+
+  store.update(deleteOwnedStatement(indexing, `data/${A}.ttl`));
+  store.update(deleteOwnedStatement(indexing, `data/${B}.ttl`));
+  let passes = 0;
+  while (
+    Number.parseInt(
+      (store.query(orphanCountQuery(indexing)) as Map<
+        string,
+        { value: string }
+      >[])[0]
+        .get("orphans")!.value,
+    ) > 0
+  ) {
+    store.update(sweepQuery(indexing));
+    if (++passes > 20) throw new Error("sweep did not converge");
+  }
+
+  // the prefix triples point away from the name, so they never made it look
+  // referenced, and the sweep took them along with the rest of it
+  assert(!has(store, species), "the orphaned name is gone");
+  assertEquals(prefixesOf(store, species), [], "no dangling index entries");
+  // the genus an external dataset points at keeps both its triples and its index
+  assert(
+    prefixesOf(store, "http://taxon-name.plazi.org/id/Animalia/Saigona")
+      .length > 0,
+  );
 });

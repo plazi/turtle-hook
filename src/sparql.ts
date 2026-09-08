@@ -12,18 +12,27 @@
  *   {@link deleteOwnedStatement} and {@link sweepQuery}.
  */
 
-/** One named graph per turtle file. */
-export interface GraphPerFileConfig {
-  mode: "graph-per-file";
+interface CommonConfig {
   uploadUri: string;
+  /**
+   * Whether to derive the `tp:` prefix triples that taxomplete searches on.
+   *
+   * Independent of the mode: how the data is partitioned and what derived data
+   * the consumer needs are separate questions. See {@link taxompleteStatements}.
+   */
+  taxompleteIndex: boolean;
+}
+
+/** One named graph per turtle file. */
+export interface GraphPerFileConfig extends CommonConfig {
+  mode: "graph-per-file";
   /** Graph names are `${graphUriPrefix}/${treatmentId}`. */
   graphUriPrefix: string;
 }
 
 /** All turtle files into one shared graph. */
-export interface SingleGraphConfig {
+export interface SingleGraphConfig extends CommonConfig {
   mode: "single-graph";
-  uploadUri: string;
   /** The one graph everything goes into. Never dropped, never rebuilt. */
   targetGraph: string;
   /**
@@ -179,6 +188,59 @@ ${body.trim()}
   };
 }
 
+const TAXOMPLETE = "https://vocab.plazi.org/taxomplete/";
+const TAXON_NAME = "http://filteredpush.org/ontologies/oa/dwcFP#TaxonName";
+const DWC = "http://rs.tdwg.org/dwc/terms/";
+
+/** The name parts taxomplete offers suggestions for, and the lengths it asks for. */
+const INDEXED_PARTS = ["genus", "species"];
+const PREFIX_LENGTHS = [2, 3, 4];
+
+/** Subjects a gg2rdf file describes, as written by its serialiser: one uri per
+ * line, at the start of the line. Same coupling as {@link turtleToInsertData}. */
+export function subjectsIn(turtle: string) {
+  return [...turtle.matchAll(/^<([^>]*)>[ \t]*$/gm)].map((match) => match[1]);
+}
+
+/**
+ * Derives the lowercased 2, 3 and 4 character prefixes of every taxon name's
+ * genus and species.
+ *
+ * taxomplete does not filter on these, it *matches* on them: a two character
+ * input turns into `?sub tp:genusPrefix2 "sa"` with no regex fallback, so a
+ * taxon name without them is invisible to the search rather than merely slower
+ * to find. They therefore have to be maintained with the data, not after it.
+ *
+ * Writing them costs nothing in correctness: taxon name uris are derived from
+ * the name itself, so a corrected genus produces a different uri rather than
+ * mutating an existing one, and a prefix already in the store can never go
+ * stale. Only new names ever need indexing.
+ *
+ * @param subjects Limits the update to these resources. Omit in graph-per-file
+ * mode, where the graph holds one treatment and is already the scope.
+ */
+export function taxompleteStatements(graphUri: string, subjects?: string[]) {
+  if (subjects?.length === 0) return [];
+  const values = subjects
+    ? `  VALUES ?res { ${subjects.map((s) => `<${s}>`).join(" ")} }\n`
+    : "";
+  // written with full iris rather than prefixed names so that this never has to
+  // agree with the prologue of the turtle it is appended to
+  return INDEXED_PARTS.flatMap((part) =>
+    PREFIX_LENGTHS.map((length) =>
+      `INSERT {
+  GRAPH <${graphUri}> { ?res <${TAXOMPLETE}${part}Prefix${length}> ?prefix }
+} WHERE {
+${values}  GRAPH <${graphUri}> {
+    ?res a <${TAXON_NAME}> ; <${DWC}${part}> ?value .
+  }
+  FILTER(STRLEN(?value) > ${length - 1})
+  BIND(LCASE(SUBSTR(?value, 1, ${length})) AS ?prefix)
+}`
+    )
+  );
+}
+
 /**
  * The updates to send for one changed file, in order. Callers should send them
  * as a single request where possible so that delete and insert stay atomic.
@@ -195,12 +257,15 @@ export function statementsFor(
   },
 ): string[] {
   if (config.mode === "graph-per-file") {
-    const graph = `<${config.graphUriPrefix}/${treatmentId(fileName)}>`;
-    const drop = `DROP GRAPH ${graph}`;
-    const load = `LOAD ${fileUri(fileName)} INTO GRAPH ${graph}`;
-    if (action === "added") return [load];
+    const graphUri = `${config.graphUriPrefix}/${treatmentId(fileName)}`;
+    const drop = `DROP GRAPH <${graphUri}>`;
+    const load = `LOAD ${fileUri(fileName)} INTO GRAPH <${graphUri}>`;
     if (action === "removed") return [drop];
-    return [`${drop}; ${load}`];
+    // dropping the graph takes the derived triples with it, so they are simply
+    // rebuilt after every load and can never go stale here
+    const index = config.taxompleteIndex ? taxompleteStatements(graphUri) : [];
+    const write = action === "added" ? [load] : [`${drop}; ${load}`];
+    return index.length === 0 ? write : [[...write, ...index].join(";\n")];
   }
 
   const remove = deleteOwnedStatement(config, fileName);
@@ -211,13 +276,23 @@ export function statementsFor(
   //
   // Both operations go into one request so that a file is never left half
   // removed if the endpoint drops the connection in between.
+  // read even when loading by uri, because the index has to be scoped to the
+  // resources this file describes and only the file itself lists them
+  const turtle = config.insertVia === "insert-data" || config.taxompleteIndex
+    ? readFile(fileName)
+    : undefined;
   const { prologue, operation } = config.insertVia === "load"
     ? {
       prologue: [],
       operation: `LOAD ${fileUri(fileName)} INTO GRAPH <${config.targetGraph}>`,
     }
-    : insertData(readFile(fileName), config.targetGraph);
-  return [[...prologue, `${remove};`, operation].join("\n")];
+    : insertData(turtle!, config.targetGraph);
+  const index = config.taxompleteIndex
+    ? taxompleteStatements(config.targetGraph, subjectsIn(turtle!))
+    : [];
+  return [
+    [...prologue, [remove, operation, ...index].join(";\n")].join("\n"),
+  ];
 }
 
 /**
