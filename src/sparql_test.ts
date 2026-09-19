@@ -28,8 +28,8 @@ const config: SingleGraphConfig = {
   uploadUri: "https://example.org/sparql",
   targetGraph: TARGET,
   insertVia: "insert-data",
-  treatmentUriPrefix: "http://treatment.plazi.org/id",
-  materialCitationUriPrefix: "http://tb.plazi.org/GgServer/dwcaRecords",
+  treatmentUriPrefix: "https://treatment.plazi.org/id",
+  materialCitationUriPrefix: "https://tb.plazi.org/GgServer/dwcaRecords",
 };
 
 const A = "000040332F2853C295734E7BD4190F05";
@@ -50,25 +50,25 @@ const treatmentB = `@prefix dc: <http://purl.org/dc/elements/1.1/> .
 @prefix dwcFP: <http://filteredpush.org/ontologies/oa/dwcFP#> .
 @prefix trt: <http://plazi.org/vocab/treatment#> .
 
-<http://treatment.plazi.org/id/${B}>
+<https://treatment.plazi.org/id/${B}>
     dc:title "Saigona testensis Zheng & Chen 2021, sp. nov." ;
-    dwc:basisOfRecord <http://tb.plazi.org/GgServer/dwcaRecords/${B}.mc.1> ;
-    trt:definesTaxonConcept <http://taxon-concept.plazi.org/id/Animalia/Saigona_testensis_Zheng_2021> ;
+    dwc:basisOfRecord <https://tb.plazi.org/GgServer/dwcaRecords/${B}.mc.1> ;
+    trt:definesTaxonConcept <https://taxon-concept.plazi.org/id/Animalia/Saigona_testensis_Zheng_2021> ;
     trt:publishedIn <http://doi.org/10.3897/zookeys.1054.67004> ;
     a trt:Treatment .
 
-<http://tb.plazi.org/GgServer/dwcaRecords/${B}.mc.1>
+<https://tb.plazi.org/GgServer/dwcaRecords/${B}.mc.1>
     dwc:catalogNumber "TEST-1" ;
     a dwc:MaterialCitation .
 
-<http://taxon-concept.plazi.org/id/Animalia/Saigona_testensis_Zheng_2021>
+<https://taxon-concept.plazi.org/id/Animalia/Saigona_testensis_Zheng_2021>
     dwc:genus "Saigona" ;
-    trt:hasTaxonName <http://taxon-name.plazi.org/id/Animalia/Saigona_testensis> ;
+    trt:hasTaxonName <https://taxon-name.plazi.org/id/Animalia/Saigona_testensis> ;
     a dwcFP:TaxonConcept .
 
-<http://taxon-name.plazi.org/id/Animalia/Saigona_testensis>
+<https://taxon-name.plazi.org/id/Animalia/Saigona_testensis>
     dwc:genus "Saigona" ;
-    trt:hasParentName <http://taxon-name.plazi.org/id/Animalia/Saigona> ;
+    trt:hasParentName <https://taxon-name.plazi.org/id/Animalia/Saigona> ;
     a dwcFP:TaxonName .
 `;
 
@@ -83,7 +83,7 @@ INSERT DATA {
   GRAPH <${TARGET}> {
     <https://www.catalogueoflife.org/data/taxon/8RHTH>
       rdfs:label "Saigona" ;
-      owl:sameAs <http://taxon-name.plazi.org/id/Animalia/Saigona> .
+      owl:sameAs <https://taxon-name.plazi.org/id/Animalia/Saigona> .
   }
 }`;
 
@@ -152,7 +152,7 @@ Deno.test("graph-per-file emits the statements it always has", () => {
 Deno.test("turtleToInsertData accepts real gg2rdf output", () => {
   const store = new Store();
   store.update(turtleToInsertData(treatmentA, TARGET));
-  assert(has(store, `http://treatment.plazi.org/id/${A}`));
+  assert(has(store, `https://treatment.plazi.org/id/${A}`));
   // the file describes the treatment, the publication, one taxon concept,
   // seven taxon names and five figures
   assertEquals(subjects(store).length, 15);
@@ -174,22 +174,22 @@ Deno.test("deleting a treatment takes what it owns and nothing else", () => {
   store.update(deleteOwnedStatement(config, `data/${B}.ttl`));
 
   // gone: the treatment and the material citation it owns
-  assert(!has(store, `http://treatment.plazi.org/id/${B}`));
+  assert(!has(store, `https://treatment.plazi.org/id/${B}`));
   assert(
-    !has(store, `http://tb.plazi.org/GgServer/dwcaRecords/${B}.mc.1`),
+    !has(store, `https://tb.plazi.org/GgServer/dwcaRecords/${B}.mc.1`),
     "material citations carry the treatment id and are owned",
   );
 
   // kept: the other treatment, everything shared, and the foreign dataset
-  assert(has(store, `http://treatment.plazi.org/id/${A}`));
+  assert(has(store, `https://treatment.plazi.org/id/${A}`));
   assert(has(store, "http://doi.org/10.3897/zookeys.1054.67004"));
-  assert(has(store, "http://taxon-name.plazi.org/id/Animalia/Saigona"));
+  assert(has(store, "https://taxon-name.plazi.org/id/Animalia/Saigona"));
   assert(has(store, "https://www.catalogueoflife.org/data/taxon/8RHTH"));
 
   // and the taxon name only B referred to is left behind — that is what the
   // sweep is for, a treatment's own delete cannot tell it was the last referrer
   assert(
-    has(store, "http://taxon-name.plazi.org/id/Animalia/Saigona_testensis"),
+    has(store, "https://taxon-name.plazi.org/id/Animalia/Saigona_testensis"),
   );
 });
 
@@ -240,10 +240,10 @@ Deno.test("the sweep collects orphans, in layers, and stops at referenced ones",
   // the concepts and species names only these treatments used are gone
   for (
     const gone of [
-      "http://taxon-concept.plazi.org/id/Animalia/Saigona_baiseensis_Zheng_2021",
-      "http://taxon-concept.plazi.org/id/Animalia/Saigona_testensis_Zheng_2021",
-      "http://taxon-name.plazi.org/id/Animalia/Saigona_baiseensis",
-      "http://taxon-name.plazi.org/id/Animalia/Saigona_testensis",
+      "https://taxon-concept.plazi.org/id/Animalia/Saigona_baiseensis_Zheng_2021",
+      "https://taxon-concept.plazi.org/id/Animalia/Saigona_testensis_Zheng_2021",
+      "https://taxon-name.plazi.org/id/Animalia/Saigona_baiseensis",
+      "https://taxon-name.plazi.org/id/Animalia/Saigona_testensis",
     ]
   ) {
     assert(!has(store, gone), `${gone} should have been swept`);
@@ -253,10 +253,10 @@ Deno.test("the sweep collects orphans, in layers, and stops at referenced ones",
   // protection propagates up the parent chain
   for (
     const kept of [
-      "http://taxon-name.plazi.org/id/Animalia/Saigona",
-      "http://taxon-name.plazi.org/id/Animalia/Dictyopharidae",
-      "http://taxon-name.plazi.org/id/Animalia/Hemiptera",
-      "http://taxon-name.plazi.org/id/Animalia",
+      "https://taxon-name.plazi.org/id/Animalia/Saigona",
+      "https://taxon-name.plazi.org/id/Animalia/Dictyopharidae",
+      "https://taxon-name.plazi.org/id/Animalia/Hemiptera",
+      "https://taxon-name.plazi.org/id/Animalia",
       "https://www.catalogueoflife.org/data/taxon/8RHTH",
     ]
   ) {
@@ -298,16 +298,16 @@ function prefixesOf(store: Store, subject: string) {
 Deno.test("subjectsIn finds what a gg2rdf file describes", () => {
   const found = subjectsIn(treatmentA);
   assertEquals(found.length, 15);
-  assert(found.includes(`http://treatment.plazi.org/id/${A}`));
-  assert(found.includes("http://taxon-name.plazi.org/id/Animalia/Saigona"));
+  assert(found.includes(`https://treatment.plazi.org/id/${A}`));
+  assert(found.includes("https://taxon-name.plazi.org/id/Animalia/Saigona"));
 });
 
 Deno.test("taxonNamesIn keeps only the taxon name namespace", () => {
   const names = taxonNamesIn(treatmentA);
   assert(names.length > 0);
-  assert(names.every((s) => s.startsWith("http://taxon-name.plazi.org/id/")));
-  assert(names.includes("http://taxon-name.plazi.org/id/Animalia/Saigona"));
-  assert(!names.includes(`http://treatment.plazi.org/id/${A}`));
+  assert(names.every((s) => s.startsWith("https://taxon-name.plazi.org/id/")));
+  assert(names.includes("https://taxon-name.plazi.org/id/Animalia/Saigona"));
+  assert(!names.includes(`https://treatment.plazi.org/id/${A}`));
 });
 
 Deno.test("the index VALUES clause lists only taxon names", () => {
@@ -316,7 +316,7 @@ Deno.test("the index VALUES clause lists only taxon names", () => {
     readFile: () => treatmentA,
   });
   const values = statement.match(/VALUES \?res \{([^}]*)\}/)![1];
-  assert(values.includes("<http://taxon-name.plazi.org/id/Animalia/Saigona>"));
+  assert(values.includes("<https://taxon-name.plazi.org/id/Animalia/Saigona>"));
   assert(!values.includes("treatment.plazi.org"));
   assert(!values.includes("dwcaRecords"));
 });
@@ -353,7 +353,7 @@ Deno.test("taxomplete triples are derived for the file's taxon names", () => {
   assertEquals(
     prefixesOf(
       store,
-      "http://taxon-name.plazi.org/id/Animalia/Saigona_baiseensis",
+      "https://taxon-name.plazi.org/id/Animalia/Saigona_baiseensis",
     ),
     [
       "genusPrefix2=sa",
@@ -371,7 +371,7 @@ Deno.test("taxomplete triples are derived for the file's taxon names", () => {
 
   // ranks above genus carry no dwc:genus, so they get nothing
   assertEquals(
-    prefixesOf(store, "http://taxon-name.plazi.org/id/Animalia/Insecta"),
+    prefixesOf(store, "https://taxon-name.plazi.org/id/Animalia/Insecta"),
     [],
   );
 });
@@ -401,7 +401,7 @@ Deno.test("indexing is scoped to the file and stays idempotent", () => {
   assertEquals(
     prefixesOf(
       store,
-      "http://taxon-name.plazi.org/id/Animalia/Saigona_testensis",
+      "https://taxon-name.plazi.org/id/Animalia/Saigona_testensis",
     ),
     [],
     "B's names are not this file's to index",
@@ -452,7 +452,7 @@ Deno.test("derived triples neither protect nor survive a swept name", () => {
       })
     ) store.update(statement);
   }
-  const species = "http://taxon-name.plazi.org/id/Animalia/Saigona_baiseensis";
+  const species = "https://taxon-name.plazi.org/id/Animalia/Saigona_baiseensis";
   assert(prefixesOf(store, species).length > 0, "indexed to begin with");
 
   store.update(deleteOwnedStatement(indexing, `data/${A}.ttl`));
@@ -477,7 +477,7 @@ Deno.test("derived triples neither protect nor survive a swept name", () => {
   assertEquals(prefixesOf(store, species), [], "no dangling index entries");
   // the genus an external dataset points at keeps both its triples and its index
   assert(
-    prefixesOf(store, "http://taxon-name.plazi.org/id/Animalia/Saigona")
+    prefixesOf(store, "https://taxon-name.plazi.org/id/Animalia/Saigona")
       .length > 0,
   );
 });

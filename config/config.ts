@@ -33,6 +33,9 @@ import { type SparqlConfig } from "../src/sparql.ts";
  *
  * The uri namespaces below are not deployment settings: they have to match what
  * gg2rdf writes, and changing them would orphan everything already uploaded.
+ * Since plazi/gg2rdf#33 that is `https://` throughout, for graph names and
+ * subjects alike; a store loaded before the switch has to be renamed in place
+ * first (README, "Migrating a store to https:// IRIs").
  */
 
 function required(name: string) {
@@ -72,10 +75,10 @@ export const sparqlConfig: SparqlConfig = mode === "single-graph"
       ["insert-data", "load"],
       "insert-data",
     ),
-    // note the http, and note that these are not the graph names used by
-    // graph-per-file below: they are the subject uris gg2rdf writes
-    treatmentUriPrefix: "http://treatment.plazi.org/id",
-    materialCitationUriPrefix: "http://tb.plazi.org/GgServer/dwcaRecords",
+    // these are not the graph names used by graph-per-file below: they are
+    // the subject uris gg2rdf writes (the same prefix, but a different role)
+    treatmentUriPrefix: "https://treatment.plazi.org/id",
+    materialCitationUriPrefix: "https://tb.plazi.org/GgServer/dwcaRecords",
   }
   : {
     mode,

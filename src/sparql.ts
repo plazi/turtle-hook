@@ -49,10 +49,10 @@ export interface SingleGraphConfig extends CommonConfig {
   /**
    * Namespace of the subjects a treatment file owns.
    *
-   * Note this is NOT `graphUriPrefix`: gg2rdf writes subjects under
-   * `http://treatment.plazi.org/id/...` while the graph names used by
-   * `graph-per-file` are `https://treatment.plazi.org/id/...`. They are
-   * different namespaces and are not interchangeable.
+   * Note this is NOT `graphUriPrefix`, even though the two spell the same
+   * since plazi/gg2rdf#33: this one is the namespace of the subjects gg2rdf
+   * writes, the other names the graphs `graph-per-file` loads into. They play
+   * different roles and are not interchangeable.
    */
   treatmentUriPrefix: string;
   /** Namespace of material citations, which also embed the treatment id. */
@@ -202,7 +202,7 @@ export function subjectsIn(turtle: string) {
   return [...turtle.matchAll(/^<([^>]*)>[ \t]*$/gm)].map((match) => match[1]);
 }
 
-const TAXON_NAME_NAMESPACE = "http://taxon-name.plazi.org/id/";
+const TAXON_NAME_NAMESPACE = "https://taxon-name.plazi.org/id/";
 
 /** The subjects of a gg2rdf file that can be taxon names, by namespace. Only
  * these can carry the index, so listing the others in a `VALUES` clause just
@@ -316,7 +316,7 @@ export function statementsFor(
  */
 export const SWEEPABLE_NAMESPACES = [
   TAXON_NAME_NAMESPACE,
-  "http://taxon-concept.plazi.org/id/",
+  "https://taxon-concept.plazi.org/id/",
 ];
 
 function orphanPattern(namespaces: string[]) {
