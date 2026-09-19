@@ -15,6 +15,7 @@ import {
   statementsFor,
   subjectsIn,
   sweepQuery,
+  taxonNamesIn,
   treatmentId,
   turtleToInsertData,
 } from "./sparql.ts";
@@ -299,6 +300,25 @@ Deno.test("subjectsIn finds what a gg2rdf file describes", () => {
   assertEquals(found.length, 15);
   assert(found.includes(`http://treatment.plazi.org/id/${A}`));
   assert(found.includes("http://taxon-name.plazi.org/id/Animalia/Saigona"));
+});
+
+Deno.test("taxonNamesIn keeps only the taxon name namespace", () => {
+  const names = taxonNamesIn(treatmentA);
+  assert(names.length > 0);
+  assert(names.every((s) => s.startsWith("http://taxon-name.plazi.org/id/")));
+  assert(names.includes("http://taxon-name.plazi.org/id/Animalia/Saigona"));
+  assert(!names.includes(`http://treatment.plazi.org/id/${A}`));
+});
+
+Deno.test("the index VALUES clause lists only taxon names", () => {
+  const [statement] = statementsFor(indexing, `data/${A}.ttl`, "added", {
+    fileUri: () => "<http://irrelevant>",
+    readFile: () => treatmentA,
+  });
+  const values = statement.match(/VALUES \?res \{([^}]*)\}/)![1];
+  assert(values.includes("<http://taxon-name.plazi.org/id/Animalia/Saigona>"));
+  assert(!values.includes("treatment.plazi.org"));
+  assert(!values.includes("dwcaRecords"));
 });
 
 Deno.test("the index is off unless asked for, in both modes", () => {

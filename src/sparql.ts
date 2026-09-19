@@ -202,6 +202,15 @@ export function subjectsIn(turtle: string) {
   return [...turtle.matchAll(/^<([^>]*)>[ \t]*$/gm)].map((match) => match[1]);
 }
 
+const TAXON_NAME_NAMESPACE = "http://taxon-name.plazi.org/id/";
+
+/** The subjects of a gg2rdf file that can be taxon names, by namespace. Only
+ * these can carry the index, so listing the others in a `VALUES` clause just
+ * bloats the request. Typing is still checked in the update itself. */
+export function taxonNamesIn(turtle: string) {
+  return subjectsIn(turtle).filter((s) => s.startsWith(TAXON_NAME_NAMESPACE));
+}
+
 /**
  * Derives the lowercased 2, 3 and 4 character prefixes of every taxon name's
  * genus and species.
@@ -288,7 +297,7 @@ export function statementsFor(
     }
     : insertData(turtle!, config.targetGraph);
   const index = config.taxompleteIndex
-    ? taxompleteStatements(config.targetGraph, subjectsIn(turtle!))
+    ? taxompleteStatements(config.targetGraph, taxonNamesIn(turtle!))
     : [];
   return [
     [...prologue, [remove, operation, ...index].join(";\n")].join("\n"),
@@ -306,7 +315,7 @@ export function statementsFor(
  * them is cheap; deleting someone else's data would not be.
  */
 export const SWEEPABLE_NAMESPACES = [
-  "http://taxon-name.plazi.org/id/",
+  TAXON_NAME_NAMESPACE,
   "http://taxon-concept.plazi.org/id/",
 ];
 
