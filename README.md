@@ -158,8 +158,8 @@ DELETE {
 } WHERE {
   GRAPH <TARGET> {
     ?r ?p ?o .
-    FILTER( STRSTARTS(STR(?r), "http://taxon-name.plazi.org/id/")
-         || STRSTARTS(STR(?r), "http://taxon-concept.plazi.org/id/") )
+    FILTER( STRSTARTS(STR(?r), "https://taxon-name.plazi.org/id/")
+         || STRSTARTS(STR(?r), "https://taxon-concept.plazi.org/id/") )
     FILTER NOT EXISTS { ?referrer ?referrerP ?r . FILTER(?referrer != ?r) }
   }
 }
@@ -243,6 +243,72 @@ cleared by other means first.
 Catalogue of Life triples that point at plazi taxon names protect them from the
 sweep like any other referrer, and a patch that removes the last such link
 merely leaves an orphan for the next sweep to collect.
+
+## Migrating a store to https:// IRIs
+
+Since [plazi/gg2rdf#33] every Plazi resource IRI is `https://`, matching the
+graph names this loader has always used. A store loaded before that switch holds
+`http://` subjects, and this loader — configured for `https://` — cannot find
+them: in `single-graph` mode the delete follows links from the *stored*
+treatment IRI, so an update to an old-style treatment would insert the new one
+next to the old rather than replace it. Rename the store first, then switch the
+loader; the two steps have to happen together.
+
+[plazi/gg2rdf#33]: https://github.com/plazi/gg2rdf/issues/33
+
+There is no need to replay every treatment file. One update rewrites every
+affected IRI in subject and object position, scoped to our graph and nothing
+else — other graphs in a shared store belong to other publishers:
+
+```sparql
+DELETE { GRAPH <TARGET> { ?s ?p ?o } }
+INSERT { GRAPH <TARGET> { ?s2 ?p ?o2 } }
+WHERE {
+  GRAPH <TARGET> { ?s ?p ?o }
+  BIND(STRSTARTS(STR(?s), "http://treatment.plazi.org/")
+    || STRSTARTS(STR(?s), "http://taxon-name.plazi.org/")
+    || STRSTARTS(STR(?s), "http://taxon-concept.plazi.org/")
+    || STRSTARTS(STR(?s), "http://publication.plazi.org/")
+    || STRSTARTS(STR(?s), "http://tb.plazi.org/") AS ?renameS)
+  BIND(isIRI(?o) && (STRSTARTS(STR(?o), "http://treatment.plazi.org/")
+    || STRSTARTS(STR(?o), "http://taxon-name.plazi.org/")
+    || STRSTARTS(STR(?o), "http://taxon-concept.plazi.org/")
+    || STRSTARTS(STR(?o), "http://publication.plazi.org/")
+    || STRSTARTS(STR(?o), "http://tb.plazi.org/")) AS ?renameO)
+  FILTER(?renameS || ?renameO)
+  BIND(IF(?renameS, IRI(CONCAT("https", SUBSTR(STR(?s), 5))), ?s) AS ?s2)
+  BIND(IF(?renameO, IRI(CONCAT("https", SUBSTR(STR(?o), 5))), ?o) AS ?o2)
+}
+```
+
+In `graph-per-file` mode replace the fixed `<TARGET>` with `?g` and add
+`FILTER(STRSTARTS(STR(?g), "https://treatment.plazi.org/id/"))` to the `WHERE`
+clause; the graph names themselves do not change. Where the endpoint does not
+take SPARQL Update well, `DROP GRAPH` plus `LOAD` per treatment from regenerated
+files is equivalent, since each graph holds exactly one file.
+
+Predicates need no renaming: gg2rdf never puts an instance IRI in predicate
+position, and the vocabulary namespaces (`trt:` and friends) stay `http://` by
+design. Derived triples such as the taxomplete index move with their subjects.
+The statement is one transaction; if the endpoint runs out of heap, split it
+into one statement per host — five transactions, each bounded.
+
+The order of operations:
+
+1. Stop the loader.
+2. Run the rename on the store.
+3. Deploy this version of the loader.
+4. Start it again. It now works against the renamed store even while
+   `treatments-rdf` still holds `http://` files: a file modified after the
+   gg2rdf switch deletes and re-inserts `https://` subjects, which is
+   idempotent. Regenerating `treatments-rdf` so that a reload from scratch
+   matches the store is off the critical path.
+
+Triples in *other* graphs that point at `http://` Plazi IRIs are left alone,
+deliberately: rewriting other publishers' data is not ours to do, and the old
+IRIs still dereference. Only graph joins against our data break for them, which
+is the failure this change removes on our side — tell publishers who join
+against Plazi IRIs the date.
 
 ## Development
 
