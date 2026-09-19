@@ -12,12 +12,20 @@ function headers(contentType: string) {
   return result;
 }
 
+/**
+ * A request that hangs must fail, so that a retry gets its chance and the
+ * worker is not stuck on it forever. Generous, because a large `LOAD` or a
+ * delete that scans the graph legitimately takes minutes.
+ */
+const REQUEST_TIMEOUT = 30 * 60_000;
+
 /** Throws unless the endpoint accepted the update. */
 export async function postUpdate(uploadUri: string, statement: string) {
   const response = await fetch(uploadUri, {
     method: "POST",
     body: statement,
     headers: headers("application/sparql-update"),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT),
   });
   if (!response.ok) {
     throw new Error(`Got ${response.status}:\n` + await response.text());
@@ -27,14 +35,15 @@ export async function postUpdate(uploadUri: string, statement: string) {
 }
 
 /** Runs a SELECT and returns the bindings. */
-export async function postQuery(uploadUri: string, query: string) {
-  const response = await fetch(uploadUri, {
+export async function postQuery(queryUri: string, query: string) {
+  const response = await fetch(queryUri, {
     method: "POST",
     body: query,
     headers: {
       ...headers("application/sparql-query"),
       "Accept": "application/sparql-results+json",
     },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT),
   });
   if (!response.ok) {
     throw new Error(`Got ${response.status}:\n` + await response.text());

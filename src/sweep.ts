@@ -16,7 +16,7 @@
  *     deno run --allow-net --allow-env src/sweep.ts [--dry-run] [--max-passes=20]
  */
 
-import { sparqlConfig } from "../config/config.ts";
+import { sparqlConfig, sparqlQueryUri } from "../config/config.ts";
 import { orphanCountQuery, sweepQuery } from "./sparql.ts";
 import { postQuery, postUpdate } from "./endpoint.ts";
 
@@ -41,7 +41,7 @@ if (import.meta.main) {
 
   let total = 0;
   for (let pass = 1; pass <= maxPasses; pass++) {
-    const bindings = await postQuery(sparqlConfig.uploadUri, count);
+    const bindings = await postQuery(sparqlQueryUri, count);
     const orphans = Number.parseInt(bindings[0]?.orphans?.value ?? "0");
     if (orphans === 0) {
       console.log(`Pass ${pass}: nothing left to collect, ${total} removed.`);

@@ -11,14 +11,23 @@ interface.
 Everything that differs between deployments is read from the environment, so the
 same image can serve a private triple store and a shared one:
 
-| Variable            | Meaning                                                      |
-| ------------------- | ------------------------------------------------------------ |
-| `SPARQL_MODE`       | `graph-per-file` (default) or `single-graph`, see below      |
-| `SPARQL_ENDPOINT`   | uri of the update endpoint                                   |
-| `SPARQL_GRAPH`      | the one graph to write to — required in `single-graph` mode  |
-| `SPARQL_INSERT_VIA` | `insert-data` (default) or `load` — `single-graph` mode only |
-| `SPARQL_USER`       | credentials for the update endpoint, if it needs any         |
-| `SPARQL_PASSWORD`   | set both or neither                                          |
+| Variable                | Meaning                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------- |
+| `SPARQL_MODE`           | `graph-per-file` (default) or `single-graph`, see below                      |
+| `SPARQL_ENDPOINT`       | uri of the update endpoint                                                   |
+| `SPARQL_GRAPH`          | the one graph to write to — required in `single-graph` mode                  |
+| `SPARQL_INSERT_VIA`     | `insert-data` (default) or `load` — `single-graph` mode only                 |
+| `SPARQL_USER`           | credentials for the update endpoint, if it needs any                         |
+| `SPARQL_PASSWORD`       | set both or neither                                                          |
+| `SPARQL_QUERY_ENDPOINT` | where SELECTs go, if not the update endpoint — see below                     |
+| `COL_UPDATES`           | `true` to keep Catalogue of Life at the latest release, see below            |
+| `COL_GRAPH`             | its graph — required in `graph-per-file` mode, not allowed in `single-graph` |
+| `COL_BATCH_SIZE`        | triples per update request, default `10000`                                  |
+| `COL_CHECK_INTERVAL`    | hours between checks for a new release, default `6`                          |
+
+`SPARQL_QUERY_ENDPOINT` defaults to `SPARQL_ENDPOINT` with a trailing
+`/statements` removed, which is where RDF4J and GraphDB answer queries. Set it
+when your endpoint takes queries somewhere else.
 
 `SPARQL_TAXOMPLETE_INDEX=true` additionally derives the prefix triples
 [taxomplete](https://github.com/plazi/taxomplete) searches on — see below. It
@@ -175,6 +184,65 @@ every push — leftovers are inert until then. Run it against a quiet endpoint: 
 treatment being inserted concurrently is not yet a referrer of the taxon names
 it mentions, so a sweep running at the same time can delete names that insert is
 about to link to.
+
+## Catalogue of Life
+
+The Catalogue of Life is loaded once and then kept current by patches, because a
+release is tens of millions of triples and replacing them wholesale is not an
+option on a shared endpoint. [plazi/catologueoflife-to-rdf] publishes every
+release with a full snapshot and, from the second release on, a patch against
+the previous release: the N-Triples that went away, the N-Triples that came, and
+a manifest naming the release the patch applies `from` and leads `to`. The
+contract is documented in that repository's README; this side implements the
+consumer.
+
+[plazi/catologueoflife-to-rdf]: https://github.com/plazi/catologueoflife-to-rdf
+
+With `COL_UPDATES=true` the server checks the releases on startup and every
+`COL_CHECK_INTERVAL` hours, and applies whatever patches lead on from the
+version the store carries, one release after another. The same check runs by
+hand:
+
+```sh
+docker exec turtle-hook deno run --allow-net --allow-env --allow-read --allow-write src/col_update.ts --dry-run
+```
+
+The store's own version marker is the only state:
+
+```
+<https://www.catalogueoflife.org/data> owl:versionInfo "2026-08-26" .
+```
+
+A patch is applied only when its `from` equals the marker, and the marker moves
+in the last request, after all deletes and inserts went through. Deleting a
+triple that is absent and inserting one that is present are no-ops, so a run
+that fails partway is simply applied again from the start on the next check, and
+two deployments at different versions each pick up exactly the patches they are
+missing. The chain is followed by `from` and `to`, not by tag order, so releases
+without a patch are never in the way.
+
+Every request carries at most `COL_BATCH_SIZE` triples as plain `DELETE DATA` or
+`INSERT DATA`, which any endpoint accepts and which stays well within a gateway
+timeout. In `single-graph` mode the data lives in `SPARQL_GRAPH` next to the
+treatments; in `graph-per-file` mode it gets a graph of its own, `COL_GRAPH`.
+Either way it never overlaps with what the treatment jobs write, so the two can
+run at the same time.
+
+A store without a marker is never loaded automatically. Bootstrap it once:
+
+```sh
+docker exec turtle-hook deno run --allow-net --allow-env --allow-read --allow-write src/col_update.ts --bootstrap
+```
+
+This loads the newest release's snapshot in the same batches, writing the marker
+last. Interrupted, it resumes after the last accepted batch when run again. It
+refuses a store that already has a marker, and it does not remove anything: a
+store that holds Catalogue of Life data from before the marker existed has to be
+cleared by other means first.
+
+Catalogue of Life triples that point at plazi taxon names protect them from the
+sweep like any other referrer, and a patch that removes the last such link
+merely leaves an orphan for the next sweep to collect.
 
 ## Development
 
