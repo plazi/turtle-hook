@@ -30,7 +30,7 @@ const NEW = "2026-09-25";
 
 /** A treatment's taxon name, which the Catalogue of Life data points at. */
 const foreign = `INSERT DATA { GRAPH <${GRAPH}> {
-  <http://taxon-name.plazi.org/id/Animalia/Saigona> a <http://filteredpush.org/ontologies/oa/dwcFP#TaxonName> .
+  <https://taxon-name.plazi.org/id/Animalia/Saigona> a <http://filteredpush.org/ontologies/oa/dwcFP#TaxonName> .
 } }`;
 
 const sorted = (lines: string[]) => [...lines].sort();
@@ -39,7 +39,7 @@ const sorted = (lines: string[]) => [...lines].sort();
 const oldSnapshot = sorted([
   `<${TAXON}/8RHTH> <http://rs.tdwg.org/dwc/terms/scientificName> "Saigona" .`,
   `<${TAXON}/8RHTH> <http://rs.tdwg.org/dwc/terms/taxonRank> "genus" .`,
-  `<${TAXON}/8RHTH> <http://www.w3.org/2002/07/owl#sameAs> <http://taxon-name.plazi.org/id/Animalia/Saigona> .`,
+  `<${TAXON}/8RHTH> <http://www.w3.org/2002/07/owl#sameAs> <https://taxon-name.plazi.org/id/Animalia/Saigona> .`,
   `<${TAXON}/6W7J3> <http://rs.tdwg.org/dwc/terms/scientificName> "Saigona sinensis" .`,
   `<${TAXON}/6W7J3> <http://rs.tdwg.org/dwc/terms/parentNameUsageID> <${TAXON}/8RHTH> .`,
   `<${TAXON}/GONE1> <http://rs.tdwg.org/dwc/terms/scientificName> "Obsoleta nomen" .`,
@@ -52,7 +52,7 @@ const oldSnapshot = sorted([
 const newSnapshot = sorted([
   `<${TAXON}/8RHTH> <http://rs.tdwg.org/dwc/terms/scientificName> "Saigona" .`,
   `<${TAXON}/8RHTH> <http://rs.tdwg.org/dwc/terms/taxonRank> "genus" .`,
-  `<${TAXON}/8RHTH> <http://www.w3.org/2002/07/owl#sameAs> <http://taxon-name.plazi.org/id/Animalia/Saigona> .`,
+  `<${TAXON}/8RHTH> <http://www.w3.org/2002/07/owl#sameAs> <https://taxon-name.plazi.org/id/Animalia/Saigona> .`,
   `<${TAXON}/6W7J3> <http://rs.tdwg.org/dwc/terms/scientificName> "Saigona sinensis Ôuchi, 1940" .`,
   `<${TAXON}/6W7J3> <http://rs.tdwg.org/dwc/terms/parentNameUsageID> <${TAXON}/8RHTH> .`,
   `<${TAXON}/NEW01> <http://rs.tdwg.org/dwc/terms/scientificName> "Saigona nova" .`,
@@ -212,7 +212,7 @@ Deno.test("applying the patch turns the old snapshot into the new one", async ()
   // the foreign triple in the shared graph is untouched
   assert(
     store.query(
-      `ASK { GRAPH <${GRAPH}> { <http://taxon-name.plazi.org/id/Animalia/Saigona> ?p ?o } }`,
+      `ASK { GRAPH <${GRAPH}> { <https://taxon-name.plazi.org/id/Animalia/Saigona> ?p ?o } }`,
     ),
   );
 });
