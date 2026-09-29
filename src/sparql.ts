@@ -50,7 +50,7 @@ export interface SingleGraphConfig extends CommonConfig {
    * Namespace of the subjects a treatment file owns.
    *
    * Note this is NOT `graphUriPrefix`, even though the two spell the same
-   * since plazi/gg2rdf#33: this one is the namespace of the subjects gg2rdf
+   * since plazi/gg2rdf#34 (issue #33): this one is the namespace of the subjects gg2rdf
    * writes, the other names the graphs `graph-per-file` loads into. They play
    * different roles and are not interchangeable.
    */

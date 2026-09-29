@@ -246,15 +246,16 @@ merely leaves an orphan for the next sweep to collect.
 
 ## Migrating a store to https:// IRIs
 
-Since [plazi/gg2rdf#33] every Plazi resource IRI is `https://`, matching the
-graph names this loader has always used. A store loaded before that switch holds
-`http://` subjects, and this loader — configured for `https://` — cannot find
-them: in `single-graph` mode the delete follows links from the *stored*
-treatment IRI, so an update to an old-style treatment would insert the new one
-next to the old rather than replace it. Rename the store first, then switch the
-loader; the two steps have to happen together.
+Since [plazi/gg2rdf#34] (issue [#33][plazi/gg2rdf#33]) every Plazi resource
+IRI is `https://`, matching the graph names this loader has always used. A store
+loaded before that switch holds `http://` subjects, and this loader — configured
+for `https://` — cannot find them: in `single-graph` mode the delete follows
+links from the *stored* treatment IRI, so an update to an old-style treatment
+would insert the new one next to the old rather than replace it. Rename the
+store first, then switch the loader; the two steps have to happen together.
 
 [plazi/gg2rdf#33]: https://github.com/plazi/gg2rdf/issues/33
+[plazi/gg2rdf#34]: https://github.com/plazi/gg2rdf/pull/34
 
 There is no need to replay every treatment file. One update rewrites every
 affected IRI in subject and object position, scoped to our graph and nothing
@@ -283,9 +284,12 @@ WHERE {
 
 In `graph-per-file` mode replace the fixed `<TARGET>` with `?g` and add
 `FILTER(STRSTARTS(STR(?g), "https://treatment.plazi.org/id/"))` to the `WHERE`
-clause; the graph names themselves do not change. Where the endpoint does not
-take SPARQL Update well, `DROP GRAPH` plus `LOAD` per treatment from regenerated
-files is equivalent, since each graph holds exactly one file.
+clause; the graph names themselves do not change. `COL_GRAPH` is left out on
+purpose: the Catalogue of Life data holds only `catalogueoflife.org` IRIs and
+never mentions a Plazi resource, so there is nothing in it to rename. Where the
+endpoint does not take SPARQL Update well, `DROP GRAPH` plus `LOAD` per
+treatment from regenerated files is equivalent, since each graph holds exactly
+one file.
 
 Predicates need no renaming: gg2rdf never puts an instance IRI in predicate
 position, and the vocabulary namespaces (`trt:` and friends) stay `http://` by

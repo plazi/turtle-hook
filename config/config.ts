@@ -33,7 +33,7 @@ import { type SparqlConfig } from "../src/sparql.ts";
  *
  * The uri namespaces below are not deployment settings: they have to match what
  * gg2rdf writes, and changing them would orphan everything already uploaded.
- * Since plazi/gg2rdf#33 that is `https://` throughout, for graph names and
+ * Since plazi/gg2rdf#34 (issue #33) that is `https://` throughout, for graph names and
  * subjects alike; a store loaded before the switch has to be renamed in place
  * first (README, "Migrating a store to https:// IRIs").
  */
